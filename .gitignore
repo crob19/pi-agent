@@ -1,6 +1,14 @@
 # Binaries
 pi-agent
+pi-agent-linux-arm64
 *.exe
 
 # Build cache
 /bin/
+
+# Data directory
+.pi-agent/
+
+# IDE
+.vscode/
+.idea/
