@@ -1,1 +1,6 @@
-/target
+# Binaries
+pi-agent
+*.exe
+
+# Build cache
+/bin/
