@@ -16,7 +16,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":8080", "HTTP listen address")
-	model := flag.String("model", "gpt-4o", "OpenAI model to use")
+	model := flag.String("model", "gpt-5.2", "OpenAI model to use")
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for persistent data (tokens, database)")
 	systemPrompt := flag.String("system-prompt", "You are a helpful assistant running on a Raspberry Pi.", "system prompt for conversations")
 	conversationID := flag.String("conversation", "default", "default conversation ID")

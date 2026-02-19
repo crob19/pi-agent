@@ -30,9 +30,11 @@ type StreamDelta struct {
 
 // responsesRequest is the request body for the Responses API.
 type responsesRequest struct {
-	Model  string    `json:"model"`
-	Input  []Message `json:"input"`
-	Stream bool      `json:"stream"`
+	Model        string    `json:"model"`
+	Store        bool      `json:"store"`
+	Instructions string    `json:"instructions"`
+	Input        []Message `json:"input"`
+	Stream       bool      `json:"stream"`
 }
 
 // StreamCompletion calls the ChatGPT backend Responses API in streaming mode
@@ -41,7 +43,7 @@ type responsesRequest struct {
 //
 // The accountID is the ChatGPT account ID extracted from the OAuth JWT,
 // required for the ChatGPT-Account-Id header.
-func StreamCompletion(ctx context.Context, token, accountID, model string, messages []Message) (<-chan StreamDelta, <-chan error) {
+func StreamCompletion(ctx context.Context, token, accountID, model, instructions string, messages []Message) (<-chan StreamDelta, <-chan error) {
 	deltaCh := make(chan StreamDelta, 64)
 	errCh := make(chan error, 1)
 
@@ -49,10 +51,16 @@ func StreamCompletion(ctx context.Context, token, accountID, model string, messa
 		defer close(deltaCh)
 		defer close(errCh)
 
+		if strings.TrimSpace(instructions) == "" {
+			instructions = "You are a helpful assistant."
+		}
+
 		body, err := json.Marshal(responsesRequest{
-			Model:  model,
-			Input:  messages,
-			Stream: true,
+			Model:        model,
+			Store:        false,
+			Instructions: instructions,
+			Input:        messages,
+			Stream:       true,
 		})
 		if err != nil {
 			errCh <- fmt.Errorf("marshaling request: %w", err)
