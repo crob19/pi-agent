@@ -5,6 +5,7 @@ pi-agent-linux-arm64
 
 # Build cache
 /bin/
+target/
 
 # Data directory
 .pi-agent/
