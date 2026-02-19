@@ -23,10 +23,10 @@ type Config struct {
 
 // Server is the HTTP server for the pi-agent.
 type Server struct {
-	cfg   Config
-	ts    *token.Store
-	db    *store.DB
-	mux   *http.ServeMux
+	cfg Config
+	ts  *token.Store
+	db  *store.DB
+	mux *http.ServeMux
 }
 
 // New creates a new Server.
@@ -39,6 +39,7 @@ func New(cfg Config, ts *token.Store, db *store.DB) *Server {
 	}
 	s.mux.HandleFunc("POST /chat", s.handleChat)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
+	s.mux.HandleFunc("/", s.handleNotFound)
 	return s
 }
 
@@ -57,6 +58,12 @@ type ChatRequest struct {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	json.NewEncoder(w).Encode(map[string]string{"error": "not found"})
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
