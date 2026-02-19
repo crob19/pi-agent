@@ -74,13 +74,16 @@ func generateState() (string, error) {
 
 func buildAuthorizationURL(codeChallenge, state string) string {
 	params := url.Values{
-		"client_id":             {ClientID},
-		"redirect_uri":          {RedirectURI},
-		"scope":                 {Scopes},
-		"code_challenge":        {codeChallenge},
-		"code_challenge_method": {"S256"},
-		"response_type":         {"code"},
-		"state":                 {state},
+		"client_id":                  {ClientID},
+		"redirect_uri":               {RedirectURI},
+		"scope":                      {Scopes},
+		"code_challenge":             {codeChallenge},
+		"code_challenge_method":      {"S256"},
+		"response_type":              {"code"},
+		"state":                      {state},
+		"id_token_add_organizations": {"true"},
+		"codex_cli_simplified_flow":  {"true"},
+		"originator":                 {"pi"},
 	}
 	return AuthEndpoint + "?" + params.Encode()
 }

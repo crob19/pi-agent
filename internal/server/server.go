@@ -106,9 +106,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var messages []chat.Message
-	if s.cfg.SystemPrompt != "" {
-		messages = append(messages, chat.Message{Role: "system", Content: s.cfg.SystemPrompt})
-	}
 	for _, m := range history {
 		messages = append(messages, chat.Message{Role: string(m.Role), Content: m.Content})
 	}
@@ -129,7 +126,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	accountID := s.ts.AccountID()
-	deltaCh, errCh := chat.StreamCompletion(ctx, accessToken, accountID, s.cfg.Model, messages)
+	deltaCh, errCh := chat.StreamCompletion(ctx, accessToken, accountID, s.cfg.Model, s.cfg.SystemPrompt, messages)
 
 	var fullResponse strings.Builder
 	for delta := range deltaCh {
