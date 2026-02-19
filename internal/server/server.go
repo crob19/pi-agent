@@ -121,7 +121,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	deltaCh, errCh := chat.StreamCompletion(ctx, accessToken, s.cfg.Model, messages)
+	accountID := s.ts.AccountID()
+	deltaCh, errCh := chat.StreamCompletion(ctx, accessToken, accountID, s.cfg.Model, messages)
 
 	var fullResponse strings.Builder
 	for delta := range deltaCh {

@@ -17,12 +17,15 @@ import (
 )
 
 const (
-	AuthEndpoint  = "https://auth.openai.com/oauth/authorize"
-	TokenEndpoint = "https://auth.openai.com/oauth/token"
-	ClientID      = "app_EMoamEEZ73f0CkXaXp7hrann"
-	RedirectURI   = "http://localhost:1455/auth/callback"
-	Scopes        = "openid profile email offline_access"
-	CallbackPort  = 1455
+	AuthEndpoint       = "https://auth.openai.com/oauth/authorize"
+	TokenEndpoint      = "https://auth.openai.com/oauth/token"
+	DeviceAuthEndpoint = "https://auth.openai.com/api/accounts/deviceauth/usercode"
+	DeviceTokenEndpoint = "https://auth.openai.com/api/accounts/deviceauth/token"
+	DeviceVerifyURL    = "https://auth.openai.com/codex/device"
+	ClientID           = "app_EMoamEEZ73f0CkXaXp7hrann"
+	RedirectURI        = "http://localhost:1455/auth/callback"
+	Scopes             = "openid profile email offline_access"
+	CallbackPort       = 1455
 )
 
 // TokenResponse is the raw response from the OAuth token endpoint.
@@ -222,6 +225,136 @@ func extractAccountIDFromJWT(token string) string {
 		return claims.Organizations[0].ID
 	}
 	return ""
+}
+
+// AuthenticateDevice runs the device code authorization flow, suitable for
+// headless environments (e.g. a Raspberry Pi without a display). It prints
+// a user code and URL, then polls until the user completes authentication
+// on another device.
+func AuthenticateDevice(ctx context.Context) (*Credentials, error) {
+	// Step 1: Request a device/user code.
+	data := url.Values{
+		"client_id": {ClientID},
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, "POST", DeviceAuthEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("creating device auth request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("device auth request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("device auth request failed: %s", resp.Status)
+	}
+
+	var deviceResp struct {
+		DeviceAuthID string `json:"device_auth_id"`
+		UserCode     string `json:"user_code"`
+		Interval     int    `json:"interval"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&deviceResp); err != nil {
+		return nil, fmt.Errorf("decoding device auth response: %w", err)
+	}
+
+	// Step 2: Display instructions to the user.
+	fmt.Println()
+	fmt.Println("  To authenticate, visit:")
+	fmt.Printf("    %s\n", DeviceVerifyURL)
+	fmt.Println()
+	fmt.Printf("  And enter code: %s\n", deviceResp.UserCode)
+	fmt.Println()
+	fmt.Println("  Waiting for authentication...")
+
+	// Step 3: Poll for completion.
+	pollInterval := time.Duration(deviceResp.Interval+3) * time.Second // safety margin
+	deadline := time.After(time.Duration(deviceResp.ExpiresIn) * time.Second)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline:
+			return nil, fmt.Errorf("device authentication timed out")
+		case <-time.After(pollInterval):
+		}
+
+		cred, done, err := pollDeviceToken(ctx, deviceResp.DeviceAuthID)
+		if err != nil {
+			return nil, err
+		}
+		if done {
+			return cred, nil
+		}
+	}
+}
+
+func pollDeviceToken(ctx context.Context, deviceAuthID string) (*Credentials, bool, error) {
+	data := url.Values{
+		"client_id":      {ClientID},
+		"device_auth_id": {deviceAuthID},
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, "POST", DeviceTokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, false, fmt.Errorf("creating device token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, false, fmt.Errorf("device token request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var tokenResp struct {
+		AuthorizationCode string `json:"authorization_code"`
+		CodeVerifier      string `json:"code_verifier"`
+		Error             string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, false, fmt.Errorf("decoding device token response: %w", err)
+	}
+
+	if tokenResp.Error == "authorization_pending" || tokenResp.AuthorizationCode == "" {
+		return nil, false, nil // not ready yet
+	}
+	if tokenResp.Error != "" {
+		return nil, false, fmt.Errorf("device auth error: %s", tokenResp.Error)
+	}
+
+	// Exchange the authorization code for tokens using the server-provided code verifier.
+	oauthTokenResp, err := exchangeCodeForTokens(tokenResp.AuthorizationCode, tokenResp.CodeVerifier)
+	if err != nil {
+		return nil, false, err
+	}
+
+	accountID := ""
+	if oauthTokenResp.IDToken != "" {
+		accountID = extractAccountIDFromJWT(oauthTokenResp.IDToken)
+	}
+	if accountID == "" && oauthTokenResp.AccessToken != "" {
+		accountID = extractAccountIDFromJWT(oauthTokenResp.AccessToken)
+	}
+
+	return &Credentials{
+		AccessToken:  oauthTokenResp.AccessToken,
+		RefreshToken: oauthTokenResp.RefreshToken,
+		ExpiresAt:    time.Now().Unix() + int64(oauthTokenResp.ExpiresIn),
+		AccountID:    accountID,
+	}, true, nil
 }
 
 // Authenticate runs the full OAuth PKCE flow: opens the browser, waits

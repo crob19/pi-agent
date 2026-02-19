@@ -70,6 +70,16 @@ func (s *Store) Save(cred *oauth.Credentials) error {
 	return s.save()
 }
 
+// AccountID returns the ChatGPT account ID, or empty string if not available.
+func (s *Store) AccountID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cred == nil {
+		return ""
+	}
+	return s.cred.AccountID
+}
+
 // AccessToken returns a valid access token, refreshing automatically if
 // the current one is expired. Returns an error if no credentials exist.
 func (s *Store) AccessToken(ctx context.Context) (string, error) {

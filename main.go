@@ -20,6 +20,7 @@ func main() {
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for persistent data (tokens, database)")
 	systemPrompt := flag.String("system-prompt", "You are a helpful assistant running on a Raspberry Pi.", "system prompt for conversations")
 	conversationID := flag.String("conversation", "default", "default conversation ID")
+	headless := flag.Bool("headless", false, "use device code flow for headless auth (no browser needed)")
 	flag.Parse()
 
 	tokenPath := filepath.Join(*dataDir, "token.json")
@@ -33,8 +34,16 @@ func main() {
 
 	// If no credentials on disk, run the OAuth flow.
 	if !ts.HasCredentials() {
-		fmt.Println("No saved credentials found. Starting authentication...")
-		cred, err := oauth.Authenticate(context.Background())
+		var cred *oauth.Credentials
+		var err error
+
+		if *headless {
+			fmt.Println("No saved credentials found. Starting device code authentication...")
+			cred, err = oauth.AuthenticateDevice(context.Background())
+		} else {
+			fmt.Println("No saved credentials found. Starting authentication...")
+			cred, err = oauth.Authenticate(context.Background())
+		}
 		if err != nil {
 			log.Fatalf("authentication failed: %v", err)
 		}
