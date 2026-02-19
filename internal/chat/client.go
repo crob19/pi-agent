@@ -31,6 +31,7 @@ type StreamDelta struct {
 // responsesRequest is the request body for the Responses API.
 type responsesRequest struct {
 	Model        string    `json:"model"`
+	Store        bool      `json:"store"`
 	Instructions string    `json:"instructions"`
 	Input        []Message `json:"input"`
 	Stream       bool      `json:"stream"`
@@ -56,6 +57,7 @@ func StreamCompletion(ctx context.Context, token, accountID, model, instructions
 
 		body, err := json.Marshal(responsesRequest{
 			Model:        model,
+			Store:        false,
 			Instructions: instructions,
 			Input:        messages,
 			Stream:       true,
