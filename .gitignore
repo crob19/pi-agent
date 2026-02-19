@@ -5,9 +5,17 @@ pi-agent-linux-arm64
 
 # Build cache
 /bin/
+/dist/
 
 # Data directory
 .pi-agent/
+
+# Node / Bun
+node_modules/
+bun.lockb
+
+# TypeScript build output
+packages/*/dist/
 
 # IDE
 .vscode/
