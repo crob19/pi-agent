@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -247,7 +248,7 @@ func AuthenticateDevice(ctx context.Context) (*Credentials, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, "POST", DeviceAuthEndpoint, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(reqCtx, "POST", DeviceAuthEndpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("creating device auth request: %w", err)
 	}
@@ -332,6 +333,14 @@ func parseJSONInt(raw json.RawMessage) (int, error) {
 		return asInt, nil
 	}
 
+	var asFloat float64
+	if err := json.Unmarshal(raw, &asFloat); err == nil {
+		if asFloat != float64(int(asFloat)) {
+			return 0, fmt.Errorf("non-integer numeric value: %v", asFloat)
+		}
+		return int(asFloat), nil
+	}
+
 	var asString string
 	if err := json.Unmarshal(raw, &asString); err == nil {
 		v, convErr := strconv.Atoi(strings.TrimSpace(asString))
@@ -356,7 +365,7 @@ func pollDeviceToken(ctx context.Context, deviceAuthID string) (*Credentials, bo
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, "POST", DeviceTokenEndpoint, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(reqCtx, "POST", DeviceTokenEndpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, false, fmt.Errorf("creating device token request: %w", err)
 	}
