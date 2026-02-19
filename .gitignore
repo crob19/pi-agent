@@ -1,13 +1,21 @@
-# Binaries
-pi-agent
-pi-agent-linux-arm64
+# Binaries (anchor to repo root so packages/pi-agent/ is not excluded)
+/pi-agent
+/pi-agent-linux-arm64
 *.exe
 
 # Build cache
 /bin/
+/dist/
 
 # Data directory
 .pi-agent/
+
+# Node / Bun
+node_modules/
+bun.lockb
+
+# TypeScript build output
+packages/*/dist/
 
 # IDE
 .vscode/
