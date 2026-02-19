@@ -12,20 +12,21 @@ import (
 	"net/url"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	AuthEndpoint       = "https://auth.openai.com/oauth/authorize"
-	TokenEndpoint      = "https://auth.openai.com/oauth/token"
-	DeviceAuthEndpoint = "https://auth.openai.com/api/accounts/deviceauth/usercode"
+	AuthEndpoint        = "https://auth.openai.com/oauth/authorize"
+	TokenEndpoint       = "https://auth.openai.com/oauth/token"
+	DeviceAuthEndpoint  = "https://auth.openai.com/api/accounts/deviceauth/usercode"
 	DeviceTokenEndpoint = "https://auth.openai.com/api/accounts/deviceauth/token"
-	DeviceVerifyURL    = "https://auth.openai.com/codex/device"
-	ClientID           = "app_EMoamEEZ73f0CkXaXp7hrann"
-	RedirectURI        = "http://localhost:1455/auth/callback"
-	Scopes             = "openid profile email offline_access"
-	CallbackPort       = 1455
+	DeviceVerifyURL     = "https://auth.openai.com/codex/device"
+	ClientID            = "app_EMoamEEZ73f0CkXaXp7hrann"
+	RedirectURI         = "http://localhost:1455/auth/callback"
+	Scopes              = "openid profile email offline_access"
+	CallbackPort        = 1455
 )
 
 // TokenResponse is the raw response from the OAuth token endpoint.
@@ -233,18 +234,21 @@ func extractAccountIDFromJWT(token string) string {
 // on another device.
 func AuthenticateDevice(ctx context.Context) (*Credentials, error) {
 	// Step 1: Request a device/user code.
-	data := url.Values{
-		"client_id": {ClientID},
+	body, err := json.Marshal(map[string]string{
+		"client_id": ClientID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling device auth request: %w", err)
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, "POST", DeviceAuthEndpoint, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(reqCtx, "POST", DeviceAuthEndpoint, strings.NewReader(string(body)))
 	if err != nil {
 		return nil, fmt.Errorf("creating device auth request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -253,17 +257,34 @@ func AuthenticateDevice(ctx context.Context) (*Credentials, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		var errResp struct {
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil && errResp.Error != nil && errResp.Error.Message != "" {
+			return nil, fmt.Errorf("device auth request failed: %s (%s)", resp.Status, errResp.Error.Message)
+		}
 		return nil, fmt.Errorf("device auth request failed: %s", resp.Status)
 	}
 
 	var deviceResp struct {
-		DeviceAuthID string `json:"device_auth_id"`
-		UserCode     string `json:"user_code"`
-		Interval     int    `json:"interval"`
-		ExpiresIn    int    `json:"expires_in"`
+		DeviceAuthID string          `json:"device_auth_id"`
+		UserCode     string          `json:"user_code"`
+		IntervalRaw  json.RawMessage `json:"interval"`
+		ExpiresInRaw json.RawMessage `json:"expires_in"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&deviceResp); err != nil {
 		return nil, fmt.Errorf("decoding device auth response: %w", err)
+	}
+
+	interval, err := parseJSONInt(deviceResp.IntervalRaw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid device auth interval: %w", err)
+	}
+	expiresIn, err := parseJSONInt(deviceResp.ExpiresInRaw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid device auth expires_in: %w", err)
 	}
 
 	// Step 2: Display instructions to the user.
@@ -276,8 +297,8 @@ func AuthenticateDevice(ctx context.Context) (*Credentials, error) {
 	fmt.Println("  Waiting for authentication...")
 
 	// Step 3: Poll for completion.
-	pollInterval := time.Duration(deviceResp.Interval+3) * time.Second // safety margin
-	deadline := time.After(time.Duration(deviceResp.ExpiresIn) * time.Second)
+	pollInterval := time.Duration(interval+3) * time.Second // safety margin
+	deadline := time.After(time.Duration(expiresIn) * time.Second)
 
 	for {
 		select {
@@ -298,20 +319,45 @@ func AuthenticateDevice(ctx context.Context) (*Credentials, error) {
 	}
 }
 
+func parseJSONInt(raw json.RawMessage) (int, error) {
+	if len(raw) == 0 {
+		return 0, fmt.Errorf("missing value")
+	}
+
+	var asInt int
+	if err := json.Unmarshal(raw, &asInt); err == nil {
+		return asInt, nil
+	}
+
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		v, convErr := strconv.Atoi(strings.TrimSpace(asString))
+		if convErr != nil {
+			return 0, convErr
+		}
+		return v, nil
+	}
+
+	return 0, fmt.Errorf("unsupported type: %s", string(raw))
+}
+
 func pollDeviceToken(ctx context.Context, deviceAuthID string) (*Credentials, bool, error) {
-	data := url.Values{
-		"client_id":      {ClientID},
-		"device_auth_id": {deviceAuthID},
+	body, err := json.Marshal(map[string]string{
+		"client_id":      ClientID,
+		"device_auth_id": deviceAuthID,
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("marshaling device token request: %w", err)
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, "POST", DeviceTokenEndpoint, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(reqCtx, "POST", DeviceTokenEndpoint, strings.NewReader(string(body)))
 	if err != nil {
 		return nil, false, fmt.Errorf("creating device token request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
