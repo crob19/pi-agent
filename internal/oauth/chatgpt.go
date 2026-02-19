@@ -377,11 +377,14 @@ func pollDeviceToken(ctx context.Context, deviceAuthID string) (*Credentials, bo
 		return nil, false, fmt.Errorf("decoding device token response: %w", err)
 	}
 
-	if tokenResp.Error == "authorization_pending" || tokenResp.AuthorizationCode == "" {
-		return nil, false, nil // not ready yet
-	}
 	if tokenResp.Error != "" {
+		if tokenResp.Error == "authorization_pending" {
+			return nil, false, nil // not ready yet
+		}
 		return nil, false, fmt.Errorf("device auth error: %s", tokenResp.Error)
+	}
+	if tokenResp.AuthorizationCode == "" {
+		return nil, false, nil // no code yet
 	}
 
 	// Exchange the authorization code for tokens using the server-provided code verifier.
