@@ -1,6 +1,6 @@
-# Binaries
-pi-agent
-pi-agent-linux-arm64
+# Binaries (anchor to repo root so packages/pi-agent/ is not excluded)
+/pi-agent
+/pi-agent-linux-arm64
 *.exe
 
 # Build cache
